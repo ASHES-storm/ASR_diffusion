@@ -193,4 +193,4 @@ def train(overfit=False):
 # RUN
 # -------------------------
 if __name__ == "__main__":
-    train(overfit=True)
+    train(overfit=False)
