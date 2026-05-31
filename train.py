@@ -12,7 +12,7 @@ from vocab import VOCAB_SIZE, BLANK_IDX
 
 
 # -------------------------
-# CTC LOSS
+# LOSS
 # -------------------------
 ctc_loss_fn = nn.CTCLoss(
     blank=BLANK_IDX,
@@ -21,14 +21,14 @@ ctc_loss_fn = nn.CTCLoss(
 
 
 # -------------------------
-# CHECKPOINT PATHS
+# CHECKPOINT DIR
 # -------------------------
 CHECKPOINT_DIR = "/content/drive/MyDrive/ASR_project/checkpoints"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 
 # -------------------------
-# SAVE FUNCTION (FULL STATE)
+# SAVE FUNCTION
 # -------------------------
 def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, tag):
     path = os.path.join(
@@ -48,7 +48,7 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, tag):
 
 
 # -------------------------
-# TRAIN FUNCTION
+# TRAIN
 # -------------------------
 def train(overfit=False):
 
@@ -60,7 +60,7 @@ def train(overfit=False):
 
     loader = DataLoader(
         dataset,
-        batch_size=16,   # ✔ upgraded
+        batch_size=16,
         shuffle=True,
         collate_fn=collate_fn,
         num_workers=2,
@@ -88,8 +88,6 @@ def train(overfit=False):
         tokens = batch["tokens"].to(device)
         token_lengths = batch["token_lengths"].to(device)
         transcripts = batch["transcripts"]
-
-        best_loss = float("inf")
 
         for step in range(200):
 
@@ -121,11 +119,7 @@ def train(overfit=False):
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
 
-            # -------------------------
-            # DEBUG DECODING
-            # -------------------------
             if step % 10 == 0:
-
                 model.eval()
                 with torch.no_grad():
                     pred_logits = model(waveforms)
@@ -137,26 +131,20 @@ def train(overfit=False):
 
                 model.train()
 
-            # -------------------------
-            # STEP CHECKPOINT (OVERFIT)
-            # -------------------------
-            if step % 50 == 0:
-                save_checkpoint(model, optimizer, 0, step, best_loss, "overfit")
-
-        print("\n✅ OVERFIT COMPLETE\n")
-
-        save_checkpoint(model, optimizer, 0, 200, best_loss, "final_overfit")
-
+        save_checkpoint(model, optimizer, 0, 200, 0, "overfit_final")
+        print("\n💾 Overfit model saved\n")
         return
 
 
     # ============================================================
-    # 🚀 NORMAL TRAINING MODE
+    # 🚀 NORMAL TRAINING
     # ============================================================
 
     best_loss = float("inf")
+    patience = 3
+    no_improve_epochs = 0
 
-    for epoch in range(10):
+    for epoch in range(30):   # ✔ UPDATED TO 30
 
         total_loss = 0.0
 
@@ -196,15 +184,9 @@ def train(overfit=False):
 
             total_loss += loss.item()
 
-            # -------------------------
-            # LOGGING
-            # -------------------------
             if batch_idx % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx} | Loss: {loss.item():.4f}")
 
-            # -------------------------
-            # STEP CHECKPOINT
-            # -------------------------
             if batch_idx % 200 == 0:
                 save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, "step")
 
@@ -217,8 +199,20 @@ def train(overfit=False):
         # -------------------------
         if avg_loss < best_loss:
             best_loss = avg_loss
+            no_improve_epochs = 0
+
             save_checkpoint(model, optimizer, epoch, -1, best_loss, "best")
             print("🏆 New best model saved!\n")
+
+        else:
+            no_improve_epochs += 1
+
+        # -------------------------
+        # EARLY STOPPING
+        # -------------------------
+        if no_improve_epochs >= patience:
+            print("\n⛔ Early stopping triggered\n")
+            break
 
         # -------------------------
         # EPOCH CHECKPOINT
