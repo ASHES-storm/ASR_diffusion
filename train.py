@@ -27,7 +27,7 @@ def train(overfit=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = LJSpeechDataset(
-    "/content/drive/MyDrive/ASR_project/Datasets/LJSpeech-1.1"
+    "/content/drive/MyDrive/Python_ML_project/Dataset/LJSpeech-1.1"
 )
 
     loader = DataLoader(
@@ -191,4 +191,4 @@ def train(overfit=False):
 # RUN
 # -------------------------
 if __name__ == "__main__":
-    train(overfit=False)
+    train(overfit=True)
