@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,6 +21,33 @@ ctc_loss_fn = nn.CTCLoss(
 
 
 # -------------------------
+# CHECKPOINT PATHS
+# -------------------------
+CHECKPOINT_DIR = "/content/drive/MyDrive/ASR_project/checkpoints"
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+
+# -------------------------
+# SAVE FUNCTION (FULL STATE)
+# -------------------------
+def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, tag):
+    path = os.path.join(
+        CHECKPOINT_DIR,
+        f"{tag}_epoch{epoch}_step{batch_idx}.pt"
+    )
+
+    torch.save({
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "epoch": epoch,
+        "batch_idx": batch_idx,
+        "best_loss": best_loss
+    }, path)
+
+    print(f"💾 Saved checkpoint: {path}")
+
+
+# -------------------------
 # TRAIN FUNCTION
 # -------------------------
 def train(overfit=False):
@@ -27,20 +55,22 @@ def train(overfit=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = LJSpeechDataset(
-    "/content/drive/MyDrive/Python_ML_project/Dataset/LJSpeech-1.1"
-)
+        "/content/drive/MyDrive/Python_ML_project/Dataset/LJSpeech-1.1"
+    )
 
     loader = DataLoader(
         dataset,
-        batch_size=4,
+        batch_size=16,   # ✔ upgraded
         shuffle=True,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        num_workers=2,
+        pin_memory=True
     )
 
     model = SpeechModel(vocab_size=VOCAB_SIZE).to(device)
-    model.train()
-
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
+
+    model.train()
 
     print("🚀 Starting Training...\n")
 
@@ -49,10 +79,9 @@ def train(overfit=False):
     # ============================================================
     if overfit:
 
-        print("🔥 OVERFIT MODE ENABLED (1 batch only)\n")
+        print("🔥 OVERFIT MODE ENABLED\n")
 
-        decoder = CTCDecoder()   # ✅ FIXED
-
+        decoder = CTCDecoder()
         batch = next(iter(loader))
 
         waveforms = batch["waveforms"].to(device)
@@ -60,13 +89,13 @@ def train(overfit=False):
         token_lengths = batch["token_lengths"].to(device)
         transcripts = batch["transcripts"]
 
+        best_loss = float("inf")
+
         for step in range(200):
 
             optimizer.zero_grad()
 
-            # forward pass
             log_probs = model(waveforms)
-
             T = log_probs.size(0)
 
             input_lengths = torch.full(
@@ -76,14 +105,11 @@ def train(overfit=False):
                 device=device
             )
 
-            # build targets
-            targets_list = []
-            for i in range(tokens.size(0)):
-                targets_list.append(tokens[i, :token_lengths[i]])
+            targets = torch.cat([
+                tokens[i, :token_lengths[i]]
+                for i in range(tokens.size(0))
+            ]).to(device)
 
-            targets = torch.cat(targets_list).to(device)
-
-            # loss
             loss = ctc_loss_fn(
                 log_probs,
                 targets,
@@ -92,16 +118,16 @@ def train(overfit=False):
             )
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
 
-            # ----------------------------------------------------
-            # 🔍 LIVE DEBUG DECODING
-            # ----------------------------------------------------
+            # -------------------------
+            # DEBUG DECODING
+            # -------------------------
             if step % 10 == 0:
 
                 model.eval()
                 with torch.no_grad():
-
                     pred_logits = model(waveforms)
                     pred_text = decoder.decode(pred_logits)
 
@@ -111,16 +137,18 @@ def train(overfit=False):
 
                 model.train()
 
+            # -------------------------
+            # STEP CHECKPOINT (OVERFIT)
+            # -------------------------
+            if step % 50 == 0:
+                save_checkpoint(model, optimizer, 0, step, best_loss, "overfit")
+
         print("\n✅ OVERFIT COMPLETE\n")
 
-        # ============================================================
-        # 💾 SAVE MODEL
-        # ============================================================
-        save_path= "/content/drive/MyDrive/ASR_project/checkpoints/overfit_ctc_model.pt"
-        torch.save(model.state_dict(), save_path)
-        print("💾 Saved: overfit_ctc_model.pt")
+        save_checkpoint(model, optimizer, 0, 200, best_loss, "final_overfit")
 
         return
+
 
     # ============================================================
     # 🚀 NORMAL TRAINING MODE
@@ -141,7 +169,6 @@ def train(overfit=False):
             optimizer.zero_grad()
 
             log_probs = model(waveforms)
-
             T = log_probs.size(0)
 
             input_lengths = torch.full(
@@ -151,11 +178,10 @@ def train(overfit=False):
                 device=device
             )
 
-            targets_list = []
-            for i in range(tokens.size(0)):
-                targets_list.append(tokens[i, :token_lengths[i]])
-
-            targets = torch.cat(targets_list).to(device)
+            targets = torch.cat([
+                tokens[i, :token_lengths[i]]
+                for i in range(tokens.size(0))
+            ]).to(device)
 
             loss = ctc_loss_fn(
                 log_probs,
@@ -165,28 +191,39 @@ def train(overfit=False):
             )
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
 
             total_loss += loss.item()
 
+            # -------------------------
+            # LOGGING
+            # -------------------------
             if batch_idx % 10 == 0:
-                print(
-                    f"Epoch {epoch} | Batch {batch_idx} | "
-                    f"Loss: {loss.item():.4f}"
-                )
+                print(f"Epoch {epoch} | Batch {batch_idx} | Loss: {loss.item():.4f}")
+
+            # -------------------------
+            # STEP CHECKPOINT
+            # -------------------------
+            if batch_idx % 200 == 0:
+                save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, "step")
 
         avg_loss = total_loss / len(loader)
 
         print(f"\n🔥 Epoch {epoch} completed | Avg Loss: {avg_loss:.4f}\n")
 
-        # ============================================================
-        # 💾 SAVE BEST MODEL
-        # ============================================================
+        # -------------------------
+        # BEST MODEL SAVE
+        # -------------------------
         if avg_loss < best_loss:
             best_loss = avg_loss
-            save_path= "/content/drive/MyDrive/ASR_project/checkpoints/best_ctc_model.pt"
-            torch.save(model.state_dict(), save_path)
+            save_checkpoint(model, optimizer, epoch, -1, best_loss, "best")
             print("🏆 New best model saved!\n")
+
+        # -------------------------
+        # EPOCH CHECKPOINT
+        # -------------------------
+        save_checkpoint(model, optimizer, epoch, -1, best_loss, "epoch")
 
 
 # -------------------------
