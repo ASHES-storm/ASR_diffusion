@@ -26,7 +26,9 @@ def train(overfit=False):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = LJSpeechDataset("data/LJSpeech-1.1")
+    dataset = LJSpeechDataset(
+    "/content/drive/MyDrive/ASR_project/Datasets/LJSpeech-1.1"
+)
 
     loader = DataLoader(
         dataset,
