@@ -22,3 +22,14 @@ Thumbs.db
 
 #wav files
 *.wav
+
+# Dataset
+data/
+LJSpeech-1.1/
+*.wav
+*.flac
+
+
+# Environment
+venv/
+.env
