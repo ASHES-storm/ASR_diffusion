@@ -116,7 +116,8 @@ def train(overfit=False):
         # ============================================================
         # 💾 SAVE MODEL
         # ============================================================
-        torch.save(model.state_dict(), "overfit_ctc_model.pt")
+        save_path= "/content/drive/MyDrive/ASR_project/checkpoints/overfit_ctc_model.pt"
+        torch.save(model.state_dict(), save_path)
         print("💾 Saved: overfit_ctc_model.pt")
 
         return
@@ -183,7 +184,8 @@ def train(overfit=False):
         # ============================================================
         if avg_loss < best_loss:
             best_loss = avg_loss
-            torch.save(model.state_dict(), "best_ctc_model.pt")
+            save_path= "/content/drive/MyDrive/ASR_project/checkpoints/best_ctc_model.pt"
+            torch.save(model.state_dict(), save_path)
             print("🏆 New best model saved!\n")
 
 
